@@ -1,0 +1,4 @@
+TRACE
+MOV A, 5
+ADD A, 6
+HALT
