@@ -1,0 +1,4 @@
+ADD A, [0x12]
+ADD A, 0x34
+ADD AP, 0x56
+ADD A, [AP]

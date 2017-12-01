@@ -1,0 +1,8 @@
+MOV [35], A
+MOV [0x35], AP
+MOV A, [AP]
+MOV A, [0x53]
+MOV AP, [0x53]
+MOV A, 0x76
+MOV B, 0x76
+MOV AP, 0x76
