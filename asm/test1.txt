@@ -1,0 +1,38 @@
+PC - OP
+==========================
+00 - f1 - TRACE
+01 - 19 - MOV A, 5 - A ← 5
+02 - 05
+03 - 39 - ADD A, 6 - A ← 5 + 6
+04 - 06
+05 - f0 - HALT
+
+
+Encoded:
+f1 19 5 39 6 f0
+
+
+Shell:
+ch> push f1 19 5 39 6 f0
+PUSH: 6 bytes pushed onto the stack.
+ch> run
+RUN: Executing program
+ch> step
+STEP: Executing single instruction
+ch> step
+STEP: Executing single instruction
+ch> step
+STEP: Executing single instruction
+ch> reg
+REG: Contents of registers: 
+A: 11 
+B: 2 
+AR: 5 
+DR: 240 
+PC: 6 
+AP: 6 
+IR: 240 
+T: 11 
+PSW: 8 
+
+

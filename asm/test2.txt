@@ -1,0 +1,49 @@
+PC - OP - DESC
+==============================
+00 - F1 - TRACE
+01 - 19 - MOV A, 5
+02 - 05
+03 - 1C - MOV B, 6
+04 - 06
+05 - 1B - MOV AP, @table                - AP ← 0x0d
+06 - 0D - 0d (@table)
+07 - 14 - MOV A, [AP]                   - A  ← 0x0e
+08 - 11 - MOV A, [@table+1]             - A  ← 0x13
+09 - 0E - 13 (@table[1])
+0a - 13 - MOV AP, [@table+2]            - AP ← 0x14
+0b - 0F - 14 (@table[2])
+0c - F0 - HALT
+0d - 0E - address of @table[1] = 0x0e
+0e - 13 - @table[1] = 0x13
+0f - 14 - @table[2] = 0x14
+==============================
+
+
+Encoded:
+
+F1 19 05 1C 06 1B 0D 14 11 0E 13 0F F0 0E 13 14
+
+
+Shell:
+
+ch> push F1 19 05 1C 06 1B 0D 14 11 0E 13 0F F0 0E 13 14
+PUSH: 16 bytes pushed onto the stack.
+ch> run
+RUN: Executing program
+ch> step
+STEP: Executing single instruction
+... 8< SNIP 8< ...
+****step 6 more times*****
+... 8< SNIP 8< ...
+ch> reg
+REG: Contents of registers: 
+A: 19 
+B: 6 
+AR: 12 
+DR: 240 
+PC: 13 
+AP: 20 
+IR: 240 
+T: 8 
+PSW: 8 
+ch> 
