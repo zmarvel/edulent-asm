@@ -291,23 +291,32 @@ def parse(lines):
 
     if len(code) + len(data) > 256:
         raise AssemblerError('code + data sections exceed 256 bytes')
-    return code_labels, code, data_labels, data
+
+    symbols = {}
+    for label, addr in code_labels.items():
+        symbols[label] = addr
+    for label, addr in data_labels.items():
+        symbols[label] = len(code) + addr
+    return symbols, code, data
 
 
-def replace_addrs(code):
+def replace_addrs(symbols, code):
     for op in code:
         if isinstance(op, AbsoluteAddress):
             yield op.address
         elif isinstance(op, Label):
             res = None
-            if op.symbol in code_labels:
-                yield op.eval_tokens(code_labels[op.symbol])
-            elif op.symbol in data_labels:
-                yield len(code) + op.eval_tokens(data_labels[op.symbol])
+            if op.symbol in symbols:
+                yield op.eval_tokens(symbols[op.symbol])
             else:
                 raise LabelError(op.symbol, 'Label not found')
         else:
             yield op
+
+def assemble(lines):
+    symbols, code, data = parse(lines)
+    code = bytes(it.chain(replace_addrs(symbols, code), replace_addrs(symbols, data)))
+    return code
 
 if __name__ == '__main__':
     import argparse as ap
@@ -321,9 +330,7 @@ if __name__ == '__main__':
                         help='Input (assembly) file')
     args = parser.parse_args()
 
-    text = args.input_file
-    code_labels, code, data_labels, data = parse(text)
-    code = bytes(it.chain(replace_addrs(code), replace_addrs(data)))
+    code = assemble(args.input_file)
     if args.output is not None:
         args.output.write(code)
     elif args.hex is not None:
