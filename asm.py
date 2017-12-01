@@ -134,11 +134,11 @@ def parse(lines):
         if instr == 'mov':
             if dest.startswith('['):
                 addr = parse_addr(dest)
-                if isinstance(addr, AbsoluteAddress) and addr > 255:
+                if isinstance(addr, AbsoluteAddress) and addr.address > 255:
                     raise ParserError(' '.join(line), 'Dest addr too large')
-                if src == 'a':
+                if src == 'a': # MOV [addr], A
                     code.extend((0x21, addr))
-                elif src == 'ap':
+                elif src == 'ap': # MOV [addr], AP
                     code.extend((0x23, addr))
             elif src.startswith('['):
                 if src == '[ap]': # MOV A, [AP]
@@ -161,9 +161,9 @@ def parse(lines):
                     raise ParserError(' '.join(line), 'Src addr too large')
                 if dest == 'a': # MOV A, opnd
                     opcode = 0x19
-                elif dest == 'b':
+                elif dest == 'b': # MOV B, opnd
                     opcode = 0x1c
-                elif dest == 'ap':
+                elif dest == 'ap': # MOV AP, opnd
                     opcode = 0x1b
                 else:
                     raise ParserError(' '.join(line), 'Unrecognized dest reg')
@@ -182,7 +182,7 @@ def parse(lines):
                     upper = 0x4
                 if imm:
                     addr = parse_addr(src)
-                    if addr > 255:
+                    if isinstance(addr, AbsoluteAddress) and addr.address > 255:
                         raise ParserError(' '.join(line), 'Souce addr too large')
                     code.extend(((upper << 4) | lower, addr))
                 else:
