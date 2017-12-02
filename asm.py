@@ -159,7 +159,8 @@ def parse(lines):
     data_labels = {}
     section = 'text'
     for line in lines:
-        line = line.strip().lower().split(' ')
+        line = line.strip().lower().split('//')[0]
+        line = line.split(' ')
         line = list(filter(lambda s: s != '', line))
         instr = line[0] if len(line) > 0 else ''
         dest = line[1].rstrip(',') if len(line) > 1 else None
@@ -237,7 +238,7 @@ def parse(lines):
             if dest == 'a':
                 if src.startswith('['): # OR A, [addr]
                     opcode = 0x61
-                    opnd = parse_int(src.lstrip('[').rstrip(']'))
+                    opnd = parse_expr(src.lstrip('[').rstrip(']'))
                 else: # OR A, opnd
                     opcode = 0x69
                     opnd = parse_int(src)
