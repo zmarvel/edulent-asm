@@ -1,0 +1,5 @@
+MOV A, 0
+MOV B, 5
+MOV AP, 03
+MOV A, 0b1111
+MOV B, 0x51

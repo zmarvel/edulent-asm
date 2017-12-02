@@ -79,6 +79,8 @@ class TestInstructionEncoding(unittest.TestCase):
                 with open(fname[:-3] + 'hex', 'r') as outf:
                     code_hex = []
                     for line in outf:
+                        if line.strip() == '':
+                            continue
                         code_hex.extend(line.strip().split(' '))
                 for i, b in enumerate(code):
                     self.assertEqual(b, int(code_hex[i], 16))
