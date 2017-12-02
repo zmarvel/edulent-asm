@@ -19,6 +19,23 @@ import string
 import abc
 import sys
 import itertools as it
+from collections import deque
+
+OPERATORS = ['+', '-']
+
+OPERATOR_PREC = {
+    '+': 2,
+    '-': 2,
+}
+
+# 0 = L, 1 = R
+LEFT = 0
+RIGHT = 1
+OPERATOR_ASSOC = {
+    '+': LEFT,
+    '-': LEFT,
+}
+
 
 class ParserError(Exception):
     def __init__(self, instruction, message):
@@ -34,6 +51,18 @@ class LabelError(Exception):
         self.label = label
         self.message = message
 
+def is_int(s):
+    if s.startswith('0x'):
+        return True
+    elif s.startswith('0b'):
+        return True
+    elif s.startswith('0o'):
+        return True
+    elif any(c not in string.digits for c in s):
+        return False
+    else:
+        return True
+
 def parse_int(s):
     if s.startswith('0x'):
         return int(s, 16)
@@ -44,81 +73,84 @@ def parse_int(s):
     else:
         return int(s)
 
-class Address(metaclass=abc.ABCMeta):
+def is_expr(s):
+    return any(c in OPERATORS for c in s)
+
+def is_label(s):
+    s = s.lstrip('@')
+    if s[0] in string.digits:
+        return False
+    elif any(c not in string.ascii_lowercase and c not in string.digits for c in s):
+        return False
+    else:
+        return True
+
+class Token(metaclass=abc.ABCMeta):
     pass
 
-class Label(Address):
-    def __init__(self, symbol):
-        self.tokens = self.parse_symbol(symbol)
-        self.symbol = self.tokens[0]
+class Expression(Token):
+    def __init__(self, value):
+        self.value = value
 
-    def parse_symbol(self, sym):
-        col = 0
-        if not sym.startswith('@'):
-            raise LabelError(sym, "Label must start with `@'")
-        col += 1
-        start = col
-        end = col
-        sym = sym.lower()
-        if col < len(sym) and sym[col] in string.digits:
-            raise LabelError(sym, 'Label cannot start with a number')
-        while end < len(sym) and sym[end] in string.digits + string.ascii_lowercase:
-            end += 1
-        col = end
-        tokens = [sym[start:end]]
-
-        start = col
-        end = col
-        if col < len(sym):
-            if sym[col] == '+':
+    def tokenize(self):
+        pos = 0
+        s = self.value
+        tokens = []
+        while pos < len(s):
+            start = pos
+            end = pos
+            while end < len(s) and s[end] not in OPERATORS:
                 end += 1
-                tokens.append(sym[start:end])
-                col = end
-            elif sym[col] == '-':
-                end += 1
-                tokens.append(sym[start:end])
-                col = end
-
-        start = col
-        end = col
-        while end < len(sym) and sym[end] in string.digits:
-            end += 1
-        if start < end:
-            tokens.append(sym[start:end])
-            col = end
-
+            tokens.append(s[start:end])
+            pos = end
+            if pos < len(s):
+                tokens.append(s[pos:pos+1])
+                pos += 1
         return tokens
 
-    def eval_tokens(self, real_addr):
-        # assumes only operations are + and -
-        res = real_addr
-        pos = 1
-        while pos < len(self.tokens):
-            if self.tokens[pos] == '+':
-                pos += 1
-                if pos >= len(self.tokens):
-                    raise LabelError(self.symbol, 'Error evaluating label arithmetic')
-                res += parse_int(self.tokens[pos])
-                pos += 1
-            elif self.tokens[pos] == '-':
-                pos += 1
-                if pos >= len(self.tokens):
-                    raise LabelError(self.symbol, 'Error evaluating label arithmetic')
-                res -= parse_int(self.tokens[pos])
-                pos += 1
-        return res
+    def eval(self, symbols):
+        tokens = self.tokenize()
+        output = deque()
+        operators = []
+        for tok in tokens:
+            if is_label(tok):
+                output.append(symbols[tok.lstrip('@')])
+            elif is_int(tok):
+                output.append(tok)
+            elif tok in OPERATORS:
+                while operators != [] and\
+                      (OPERATOR_PREC[operators[-1]] > OPERATOR_PREC[tok] or\
+                      (OPERATOR_PREC[operators[-1]] == OPERATOR_PREC[tok] and OPERATOR_ASSOC[tok] == LEFT)) and\
+                      OPERATOR_PREC[operators[-1]] != '(':
+                    output.append(operators.pop())
+                operators.append(tok)
+            elif tok == '(':
+                operators.append(tok)
+            elif tok == ')':
+                while operators[-1] != '(':
+                    output.append(operators.pop())
+                operators.pop()
+        while operators != []:
+            output.append(operators.pop())
 
+        def eval_output(tok):
+            if tok == '+':
+                b = eval_output(output.pop())
+                a = eval_output(output.pop())
+                return a + b
+            elif tok == '-':
+                b = eval_output(output.pop())
+                a = eval_output(output.pop())
+                return a - b
+            elif isinstance(tok, int):
+                return tok
+            else:
+                return parse_int(tok)
 
-class AbsoluteAddress(Address):
-    def __init__(self, address):
-        self.address = address
+        return eval_output(output.pop())
 
-def parse_addr(s):
-    s = s.lstrip('[').rstrip(']')
-    if s.startswith('@'):
-        return Label(s)
-    else:
-        return AbsoluteAddress(parse_int(s))
+def parse_expr(s):
+    return Expression(s)
 
 def parse(lines):
     code = []
@@ -128,14 +160,13 @@ def parse(lines):
     section = 'text'
     for line in lines:
         line = line.strip().lower().split(' ')
-        instr = line[0]
+        line = list(filter(lambda s: s != '', line))
+        instr = line[0] if len(line) > 0 else ''
         dest = line[1].rstrip(',') if len(line) > 1 else None
         src = line[2] if len(line) > 2 else None
         if instr == 'mov':
             if dest.startswith('['):
-                addr = parse_addr(dest)
-                if isinstance(addr, AbsoluteAddress) and addr.address > 255:
-                    raise ParserError(' '.join(line), 'Dest addr too large')
+                addr = parse_expr(dest.lstrip('[').rstrip(']'))
                 if src == 'a': # MOV [addr], A
                     code.extend((0x21, addr))
                 elif src == 'ap': # MOV [addr], AP
@@ -145,9 +176,7 @@ def parse(lines):
                     opcode = 0x14
                     code.extend((opcode,))
                 else:
-                    addr = parse_addr(src)
-                    if isinstance(addr, AbsoluteAddress) and addr.address > 255:
-                        raise ParserError(' '.join(line), 'Souce addr too large')
+                    addr = parse_expr(src.lstrip('[').rstrip(']'))
                     if dest == 'a': # MOV A, [addr]
                         opcode = 0x11
                     elif dest == 'ap': # MOV AP, [addr]
@@ -156,9 +185,7 @@ def parse(lines):
                         raise ParserError(' '.join(line), 'Unrecognized src reg')
                     code.extend((opcode, addr))
             else:
-                opnd = parse_addr(src)
-                if isinstance(opnd, AbsoluteAddress) and opnd.address > 255:
-                    raise ParserError(' '.join(line), 'Src addr too large')
+                opnd = parse_expr(src.lstrip('[').rstrip(']'))
                 if dest == 'a': # MOV A, opnd
                     opcode = 0x19
                 elif dest == 'b': # MOV B, opnd
@@ -181,9 +208,7 @@ def parse(lines):
                 else: # instr == 'sub'
                     upper = 0x4
                 if imm:
-                    addr = parse_addr(src)
-                    if isinstance(addr, AbsoluteAddress) and addr.address > 255:
-                        raise ParserError(' '.join(line), 'Souce addr too large')
+                    addr = parse_expr(src.lstrip('[').rstrip(']'))
                     code.extend(((upper << 4) | lower, addr))
                 else:
                     code.extend(((upper << 4) | lower,))
@@ -223,7 +248,7 @@ def parse(lines):
             if dest == 'a':
                 if src.startswith('['): # AND A, [addr]
                     opcode = 0x71
-                    opnd = parse_addr(src)
+                    opnd = parse_expr(src.lstrip('[').rstrip(']'))
                 else: # AND A, opnd
                     opcode = 0x79
                     opnd = parse_int(src)
@@ -234,7 +259,7 @@ def parse(lines):
             if dest == 'a':
                 if src.startswith('['): # XOR A, [addr]
                     opcode = 0x81
-                    opnd = parse_addr(src)
+                    opnd = parse_expr(src.lstrip('[').rstrip(']'))
                 else: # XOR A, opnd
                     opcode = 0x89
                     opnd = parse_int(src)
@@ -245,17 +270,26 @@ def parse(lines):
         elif instr == 'out': # OUT [addr], A
             if not dest.startswith('['):
                 raise ParserError(' '.join(line), 'OUT dest must be in IO space')
-            opnd = parse_addr(dest)
+            opnd = parse_expr(dest.lstrip('[').rstrip(']'))
             code.extend((0xe0, opnd))
 
         elif instr == 'jmp':
-            opnd = parse_addr('@' + dest)
+            if is_int(dest):
+                opnd = parse_int(dest)
+            else:
+                opnd = parse_expr('@' + dest)
             code.extend((0xa1, opnd))
         elif instr == 'jz':
-            opnd = parse_addr('@' + dest)
+            if is_int(dest):
+                opnd = parse_int(dest)
+            else:
+                opnd = parse_expr('@' + dest)
             code.extend((0xa5, opnd))
         elif instr == 'jc':
-            opnd = parse_addr('@' + dest)
+            if is_int(dest):
+                opnd = parse_int(dest)
+            else:
+                opnd = parse_expr('@' + dest)
             code.extend((0xa9, opnd))
 
         elif instr == 'nop':
@@ -300,22 +334,16 @@ def parse(lines):
     return symbols, code, data
 
 
-def replace_addrs(symbols, code):
+def replace_exprs(symbols, code):
     for op in code:
-        if isinstance(op, AbsoluteAddress):
-            yield op.address
-        elif isinstance(op, Label):
-            res = None
-            if op.symbol in symbols:
-                yield op.eval_tokens(symbols[op.symbol])
-            else:
-                raise LabelError(op.symbol, 'Label not found')
+        if isinstance(op, Expression):
+            yield op.eval(symbols)
         else:
             yield op
 
 def assemble(lines):
     symbols, code, data = parse(lines)
-    code = bytes(it.chain(replace_addrs(symbols, code), replace_addrs(symbols, data)))
+    code = bytes(it.chain(replace_exprs(symbols, code), replace_exprs(symbols, data)))
     return code
 
 if __name__ == '__main__':
