@@ -52,6 +52,8 @@ class LabelError(Exception):
         self.message = message
 
 def is_int(s):
+    """Is `s` a string that can be converted to an int?
+    """
     if s.startswith('0x'):
         return True
     elif s.startswith('0b'):
@@ -64,6 +66,8 @@ def is_int(s):
         return True
 
 def parse_int(s):
+    """Try to detect the base of `s` and convert it to a string
+    """
     if s.startswith('0x'):
         return int(s, 16)
     elif s.startswith('0b'):
@@ -74,9 +78,16 @@ def parse_int(s):
         return int(s)
 
 def is_expr(s):
+    """Is `s` an arithmetic expression?
+
+    Note that this function only looks for operators in `s`---it doesn't check
+    whether the expression is valid.
+    """
     return any(c in OPERATORS for c in s)
 
 def is_label(s):
+    """Is `s` a label?
+    """
     s = s.lstrip('@')
     if s[0] in string.digits:
         return False
@@ -93,6 +104,8 @@ class Expression(Token):
         self.value = value
 
     def tokenize(self):
+        """Split up numbers, labels, and operators.
+        """
         pos = 0
         s = self.value
         tokens = []
@@ -109,6 +122,12 @@ class Expression(Token):
         return tokens
 
     def eval(self, symbols):
+        """Use the shunting-yard algorithm to evaluate a list of tokens
+        representing an arithmetic expression, given a symbol table.
+
+        Taken from:
+        https://en.wikipedia.org/wiki/Shunting-yard_algorithm
+        """
         tokens = self.tokenize()
         output = deque()
         operators = []
@@ -134,6 +153,8 @@ class Expression(Token):
             output.append(operators.pop())
 
         def eval_output(tok):
+            """Evaluate the resulting RPN stack.
+            """
             if tok == '+':
                 b = eval_output(output.pop())
                 a = eval_output(output.pop())
@@ -153,14 +174,20 @@ def parse_expr(s):
     return Expression(s)
 
 def parse(lines):
+    """Parse an assembly program.
+
+    Returns a list of opcodes and `Expression`s and a symbol table (for labels).
+    """
     code = []
     code_labels = {}
     data = []
     data_labels = {}
     section = 'text'
     for line in lines:
+        # ignore extra spaces, comments
         line = line.strip().lower().split('//')[0]
         line = line.split(' ')
+        # remove empty lines
         line = list(filter(lambda s: s != '', line))
         instr = line[0] if len(line) > 0 else ''
         dest = line[1].rstrip(',') if len(line) > 1 else None
@@ -196,6 +223,8 @@ def parse(lines):
                 else:
                     raise ParserError(' '.join(line), 'Unrecognized dest reg')
                 code.extend((opcode, opnd))
+
+        # ALU instructions
         elif instr == 'add' or instr == 'sub':
             if src.startswith('['):
                 if src == '[ap]':
@@ -268,12 +297,14 @@ def parse(lines):
             else:
                 raise ParserError(' '.join(line), 'Invalid dest reg')
 
+        # output instructions
         elif instr == 'out': # OUT [addr], A
             if not dest.startswith('['):
                 raise ParserError(' '.join(line), 'OUT dest must be in IO space')
             opnd = parse_expr(dest.lstrip('[').rstrip(']'))
             code.extend((0xe0, opnd))
 
+        # jump instructions
         elif instr == 'jmp':
             if is_int(dest):
                 opnd = parse_int(dest)
@@ -293,6 +324,7 @@ def parse(lines):
                 opnd = parse_expr('@' + dest)
             code.extend((0xa9, opnd))
 
+        # microprocessor control
         elif instr == 'nop':
             code.extend((0x00,))
         elif instr == 'trace':
@@ -300,6 +332,7 @@ def parse(lines):
         elif instr == 'halt':
             code.extend((0xf0,))
 
+        # label
         elif instr.endswith(':'):
             label = instr.rstrip(':')
             if section == 'data':
@@ -307,11 +340,13 @@ def parse(lines):
             elif section == 'text':
                 code_labels[label] = len(code)
 
+        # change the section
         elif instr == '.data':
             section = 'data'
         elif instr == '.text':
             section = 'text'
 
+        # data
         elif instr == '.byte':
             byte = parse_int(dest)
             if byte > 255:
@@ -327,6 +362,7 @@ def parse(lines):
     if len(code) + len(data) > 256:
         raise AssemblerError('code + data sections exceed 256 bytes')
 
+    # build symbol table from accumulated labels
     symbols = {}
     for label, addr in code_labels.items():
         symbols[label] = addr
@@ -336,6 +372,8 @@ def parse(lines):
 
 
 def replace_exprs(symbols, code):
+    """Evaluate expressions now that the symbol table has been built.
+    """
     for op in code:
         if isinstance(op, Expression):
             yield op.eval(symbols)
@@ -343,6 +381,8 @@ def replace_exprs(symbols, code):
             yield op
 
 def assemble(lines):
+    """Parse and assemble the code.
+    """
     symbols, code, data = parse(lines)
     code = bytes(it.chain(replace_exprs(symbols, code), replace_exprs(symbols, data)))
     return code
